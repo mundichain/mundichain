@@ -2,83 +2,85 @@
 
 [![Release](https://img.shields.io/github/v/release/mundichain/mundichain?color=blue&label=Latest%20Release)](https://github.com/mundichain/mundichain/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Network](https://img.shields.io/badge/Network-Mainnet-green)](https://mundichain.pages.dev)
+[![Network](https://img.shields.io/badge/Network-Mainnet-green)](https://bitmundi.pages.dev)
 
-A próxima geração de blockchain descentralizada, rápida e de baixa latência baseada em consenso híbrido Proof-of-Work (PoW) e Proof-of-Stake (PoS).
+The next generation of decentralized, lightweight, and low-latency blockchain powered by native Proof-of-Work (PoW) consensus.
 
 ---
 
-## ⚡ Especificações Técnicas
+## ⚡ Technical Specifications
 
 - **Ticker:** `BMD`
-- **Fornecimento Máximo (Max Supply):** 21.000.000 BMD
-- **Recompensa por Bloco Inicial:** 5.0 BMD
-- **Tempo Médio de Bloco:** ~60 segundos
-- **Algoritmo de Hashing:** SHA-256d
-- **Porta P2P:** `18444`
-- **Porta RPC:** `18332`
-- **Rede Bootstrap:** `mundichain.duckdns.org:18444`
+- **Max Supply:** 21,000,000 BMD
+- **Initial Block Reward (Subsidy):** 5.0 BMD
+- **Average Block Time:** ~60 seconds
+- **Hashing Algorithm:** SHA-256d
+- **P2P Port:** `18444`
+- **RPC Port:** `18445`
+- **Bootstrap Node:** `mundichain.duckdns.org:18444`
 
 ---
 
-## 💻 Download da Carteira Oficial (Windows)
+## 💻 Official Desktop Wallet Download (Windows)
 
-A versão oficial da **BitMundi Desktop Wallet** para Windows inclui:
-- Instalador guiado com atalhos na Área de Trabalho e Menu Iniciar
-- Nó local integrado com inicialização automática e silenciosa em segundo plano
-- Verificador automático de novas atualizações via GitHub API
-- Suporte a múltiplos idiomas e aceleração por hardware
+The official **BitMundi Core Desktop Wallet** for Windows includes:
+- Guided setup wizard with Desktop and Start Menu shortcuts
+- Integrated native node with automatic silent background bootstrap
+- Automatic update checker via GitHub Releases API
+- Multi-server auto-failover (Local node & Dedicated Mainnet node)
+- Multi-language support and hardware-accelerated GUI
 
-📥 **[Baixar Instalador Oficial (.exe)](https://github.com/mundichain/mundichain/releases/latest)**
+📥 **[Download Official Installer (.exe)](https://github.com/mundichain/mundichain/releases/latest)**
 
 ---
 
-## 🚀 Como Iniciar um Nó (Node / Daemon)
+## 🚀 How to Run a Node (Daemon)
 
-### No Linux (Ubuntu / Debian)
+### On Linux (Ubuntu / Debian)
 ```bash
-# Dependências
+# Install dependencies
 sudo apt update && sudo apt install -y build-essential libssl-dev
 
-# Compilação e execução
+# Build and start the daemon
 make
 ./bin/mundichaind
 ```
 
-### No Windows
-Execute o instalador oficial ou inicie o executável diretamente pelo terminal:
+### On Windows
+Run the official installer or launch the executable directly via Command Prompt / PowerShell:
 ```cmd
 mundichaind.exe
 ```
 
 ---
 
-## 🔍 Consulta e Gerenciamento via CLI
+## 🔍 CLI Commands & Wallet Management
 
-Para consultar o status da rede e da sua carteira:
+To check node and network status or manage your wallet:
 
 ```bash
-# Obter informações do nó e altura do bloco
+# Get node info, blockchain height, and difficulty
 mundichain-cli getinfo
 
-# Saldo da carteira
+# Check wallet balance
 mundichain-cli getbalance
 
-# Gerar novo endereço
+# Generate a new receiving address
 mundichain-cli getnewaddress
 ```
 
 ---
 
-## 🌐 Ecossistema e Links Úteis
+## 🌐 Ecosystem & Official Links
 
-- **Website Oficial:** [mundichain.pages.dev](https://mundichain.pages.dev)
-- **Explorador de Blocos (MundiScan):** [mundichain.pages.dev/mundiscan.html](https://mundichain.pages.dev/mundiscan.html)
-- **Mineração & Pool (MundiPool):** [mundichain.pages.dev/mundipool.html](https://mundichain.pages.dev/mundipool.html)
+- **Official Website:** [bitmundi.pages.dev](https://bitmundi.pages.dev)
+- **Blockchain Explorer (MundiScan):** [bitmundi.pages.dev/mundiscan.html](https://bitmundi.pages.dev/mundiscan.html)
+- **Mining Pool Portal (MundiPool):** [bitmundi.pages.dev/mundipool.html](https://bitmundi.pages.dev/mundipool.html)
+- **Live REST API Status:** [bitmundi.pages.dev/api-status.html](https://bitmundi.pages.dev/api-status.html)
 - **Whitepaper:** [WHITEPAPER_MUNDICHAIN.md](WHITEPAPER_MUNDICHAIN.md)
 
 ---
 
-## 📜 Licença
+## 📜 License
 
-Distribuído sob a licença **MIT Open Source**. Consulte o arquivo [LICENSE](LICENSE) para mais detalhes.
+Distributed under the **MIT Open Source License**. See [LICENSE](LICENSE) for more details.
