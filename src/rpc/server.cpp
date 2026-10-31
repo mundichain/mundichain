@@ -594,13 +594,7 @@ nlohmann::json RPCServer::HandleMethod(const std::string& method, const nlohmann
         return m_blockchain.CreateTransaction(fromAddr, toAddr, amt, fee);
     }
     else if (method == "mine") {
-        std::string minerAddr = (!params.empty() && params[0].is_string()) ? params[0].get<std::string>() : "";
-        nlohmann::json blk = m_blockchain.MineSingleBlockSync(minerAddr);
-        nlohmann::json res;
-        res["height"] = blk["height"];
-        res["hash"] = blk["hash"];
-        res["reward"] = static_cast<double>(Consensus::Params::INITIAL_SUBSIDY) / Consensus::Params::COIN;
-        return res;
+        throw std::runtime_error("Server-side mining is disabled for security and network decentralization. Please upgrade to BitMundi Core v1.5.2 to mine directly on your CPU.");
     }
     else if (method == "getmininginfo") {
         return m_miner.GetMiningInfo();

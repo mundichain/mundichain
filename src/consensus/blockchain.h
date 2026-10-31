@@ -54,6 +54,8 @@ public:
     static int64_t GetBlockSubsidy(int32_t height);
     static uint256 BitsToTarget(uint32_t bits);
     static uint32_t TargetToBits(const uint256& target);
+    static std::string BitsToTargetHex(uint32_t bits);
+    static uint32_t DifficultyToBits(double diff);
 
     std::mutex& GetMutex() { return m_mutex; }
 

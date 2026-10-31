@@ -150,6 +150,7 @@ void Miner::WorkerLoop(int workerId, int numThreads, const std::string& prefixSt
 
     uint64_t nonce = workerId;
     uint64_t localBatch = 0;
+    std::string targetHex = Blockchain::BitsToTargetHex(bitsInt);
 
     while (!m_stopRound && m_active) {
         std::string s = prefixStr + std::to_string(nonce);
@@ -157,7 +158,7 @@ void Miner::WorkerLoop(int workerId, int numThreads, const std::string& prefixSt
         std::string hStr = h.GetHex();
 
         // Target match condition
-        if (hStr.substr(0, 5) == "00000" || (hStr.substr(0, 4) == "0000" && hStr[4] <= 'f')) {
+        if (hStr <= targetHex) {
             // Winner!
             m_stopRound = true;
             m_totalHashesDone += localBatch;

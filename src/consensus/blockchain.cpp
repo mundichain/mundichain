@@ -1,3 +1,4 @@
+#include <iostream>
 #include "consensus/blockchain.h"
 #include "crypto/sha256.h"
 #include "crypto/ripemd160.h"
@@ -69,11 +70,56 @@ uint32_t Blockchain::TargetToBits(const uint256& target) {
     return compact;
 }
 
+
+std::string Blockchain::BitsToTargetHex(uint32_t bits) {
+    uint32_t exp = (bits >> 24) & 0xff;
+    uint32_t mant = bits & 0x007fffff;
+    // Fallback to POW_LIMIT_BITS if corrupted or zero
+    if (mant == 0 || exp == 0 || exp > 32) {
+        bits = Consensus::Params::POW_LIMIT_BITS;
+        exp = (bits >> 24) & 0xff;
+        mant = bits & 0x007fffff;
+    }
+
+    uint32_t leadingBytes = 32 - exp;
+    std::string leadingHex(leadingBytes * 2, '0');
+
+    std::stringstream ss;
+    ss << std::hex << std::setfill('0') << std::setw(6) << mant;
+    std::string s = leadingHex + ss.str();
+    if (s.size() < 64) {
+        s.append(64 - s.size(), '0');
+    }
+    return s.substr(0, 64);
+}
+
+uint32_t Blockchain::DifficultyToBits(double diff) {
+    if (diff <= 1.0) {
+        return Consensus::Params::POW_LIMIT_BITS;
+    }
+    double mant = 0x0ffff0 / diff;
+    uint32_t exp = 0x1e;
+    while (mant < 0x008000 && exp > 3) {
+        mant *= 256.0;
+        exp--;
+    }
+    uint32_t imant = static_cast<uint32_t>(mant);
+    if (imant > 0x007fffff) {
+        imant >>= 8;
+        exp++;
+    }
+    return (exp << 24) | (imant & 0x007fffff);
+}
+
 double Blockchain::CalculateDifficulty(uint32_t bits) {
     uint32_t powBits = Consensus::Params::POW_LIMIT_BITS;
-    if (bits == 0) return 0.0;
-    double maxTarget = static_cast<double>(powBits & 0x00ffffff) * std::pow(256.0, (powBits >> 24) - 3);
-    double curTarget = static_cast<double>(bits & 0x00ffffff) * std::pow(256.0, (bits >> 24) - 3);
+    if (bits == 0) return 1.0;
+    uint32_t exp = bits >> 24;
+    uint32_t mant = bits & 0x007fffff;
+    if (mant == 0 || exp == 0) return 1.0;
+
+    double maxTarget = static_cast<double>(powBits & 0x007fffff) * std::pow(256.0, (powBits >> 24) - 3);
+    double curTarget = static_cast<double>(mant) * std::pow(256.0, exp - 3);
     if (curTarget <= 0.0) return 1.0;
     return std::max(1.0, std::round((maxTarget / curTarget) * 10000.0) / 10000.0);
 }
@@ -190,17 +236,23 @@ uint32_t Blockchain::GetNextWorkRequired() const {
     const auto& lastBlock = m_blocks.back();
     int32_t lastHeight = lastBlock.value("height", 0);
 
+    // If not at a retarget boundary, keep previous bits
     if ((lastHeight + 1) % Consensus::Params::RETARGET_INTERVAL != 0) {
         std::string bitsStr = lastBlock.value("bits", "0x1e0ffff0");
-        return static_cast<uint32_t>(std::stoul(bitsStr, nullptr, 16));
+        uint32_t b = static_cast<uint32_t>(std::stoul(bitsStr, nullptr, 16));
+        if (b == 0x1e000000 || (b & 0x007fffff) == 0) {
+            return Consensus::Params::POW_LIMIT_BITS;
+        }
+        return b;
     }
 
     size_t firstIdx = m_blocks.size() - Consensus::Params::RETARGET_INTERVAL;
     const auto& firstBlock = m_blocks[firstIdx];
 
     int64_t actualTimespan = lastBlock.value("time", (int64_t)0) - firstBlock.value("time", (int64_t)0);
-    int64_t targetTimespan = Consensus::Params::TARGET_TIMESPAN;
+    int64_t targetTimespan = Consensus::Params::TARGET_TIMESPAN; // 7200s
 
+    // Nakamoto damping: max 4x up or 4x down
     if (actualTimespan < targetTimespan / 4) actualTimespan = targetTimespan / 4;
     if (actualTimespan > targetTimespan * 4) actualTimespan = targetTimespan * 4;
 
@@ -210,20 +262,10 @@ uint32_t Blockchain::GetNextWorkRequired() const {
     // Retarget
     double factor = static_cast<double>(actualTimespan) / static_cast<double>(targetTimespan);
     double curDiff = CalculateDifficulty(lastBits);
+    if (curDiff < 1.0) curDiff = 1.0;
+
     double newDiff = std::max(1.0, curDiff / factor);
-
-    if (newDiff <= 1.0) {
-        return Consensus::Params::POW_LIMIT_BITS;
-    }
-
-    uint32_t mantissa = lastBits & 0x00ffffff;
-    uint32_t exponent = lastBits >> 24;
-    uint64_t scaledMantissa = static_cast<uint64_t>(mantissa * factor);
-    while (scaledMantissa > 0x007fffff) {
-        scaledMantissa >>= 8;
-        exponent++;
-    }
-    return (exponent << 24) | static_cast<uint32_t>(scaledMantissa & 0x007fffff);
+    return DifficultyToBits(newDiff);
 }
 
 BalanceResult Blockchain::GetBalance(const std::string& address) const {
@@ -352,58 +394,69 @@ std::string Blockchain::CreateTransaction(const std::string& fromAddr, const std
 }
 
 nlohmann::json Blockchain::MineSingleBlockSync(const std::string& minerAddress) {
-    std::lock_guard<std::mutex> lock(m_mutex);
     std::string miner = minerAddress.empty() ? m_wallet.GetPrimaryAddress() : minerAddress;
 
-    int32_t height = static_cast<int32_t>(m_blocks.size());
-    std::string prevHash = m_blocks.back().value("hash", "");
-    int64_t subsidy = GetBlockSubsidy(height);
-    int64_t nowTime = std::chrono::duration_cast<std::chrono::seconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
+    int32_t height;
+    std::string prevHash;
+    int64_t subsidy;
+    int64_t nowTime;
+    std::string merkleRoot;
+    std::vector<nlohmann::json> blockTxs;
+    uint32_t bitsInt;
+    std::string bitsHex;
+    std::string targetHex;
+    std::string prefixStr;
 
-    int64_t totalFees = 0;
-    std::vector<nlohmann::json> sortedMempool = m_mempool;
-    std::sort(sortedMempool.begin(), sortedMempool.end(), [](const nlohmann::json& a, const nlohmann::json& b) {
-        return a.value("fee", (int64_t)0) > b.value("fee", (int64_t)0);
-    });
+    // STEP 1: Lock m_mutex ONLY briefly to prepare block template
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        height = static_cast<int32_t>(m_blocks.size());
+        prevHash = m_blocks.back().value("hash", "");
+        subsidy = GetBlockSubsidy(height);
+        nowTime = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
 
-    for (const auto& tx : sortedMempool) {
-        totalFees += tx.value("fee", (int64_t)0);
-    }
+        int64_t totalFees = 0;
+        std::vector<nlohmann::json> sortedMempool = m_mempool;
+        std::sort(sortedMempool.begin(), sortedMempool.end(), [](const nlohmann::json& a, const nlohmann::json& b) {
+            return a.value("fee", (int64_t)0) > b.value("fee", (int64_t)0);
+        });
 
-    nlohmann::json coinbaseTx = {
-        {"txid", RandomHex(32)},
-        {"is_coinbase", true},
-        {"time", nowTime},
-        {"vin", nlohmann::json::array({{{"coinbase", "Mined by MundiChain C++ Native Node Block #" + std::to_string(height)}}})},
-        {"vout", nlohmann::json::array({{{"value", subsidy + totalFees}, {"address", miner}}})}
-    };
+        for (const auto& tx : sortedMempool) {
+            totalFees += tx.value("fee", (int64_t)0);
+        }
 
-    std::vector<nlohmann::json> blockTxs = {coinbaseTx};
-    for (const auto& tx : sortedMempool) {
-        blockTxs.push_back(tx);
-    }
-    m_mempool.clear();
+        nlohmann::json coinbaseTx = {
+            {"txid", RandomHex(32)},
+            {"is_coinbase", true},
+            {"time", nowTime},
+            {"vin", nlohmann::json::array({{{"coinbase", "Mined by MundiChain C++ Native Node Block #" + std::to_string(height)}}})},
+            {"vout", nlohmann::json::array({{{"value", subsidy + totalFees}, {"address", miner}}})}
+        };
 
-    std::string txHashes;
-    for (const auto& tx : blockTxs) {
-        txHashes += tx.value("txid", "");
-    }
-    uint256 merkle = Hash256(txHashes.begin(), txHashes.end());
-    std::string merkleRoot = merkle.GetHex();
+        blockTxs.push_back(coinbaseTx);
+        for (const auto& tx : sortedMempool) {
+            blockTxs.push_back(tx);
+        }
+        m_mempool.clear();
 
-    uint32_t bitsInt = GetNextWorkRequired();
-    std::stringstream bitsStream;
-    bitsStream << "0x" << std::hex << bitsInt;
-    std::string bitsHex = bitsStream.str();
+        std::string txHashes;
+        for (const auto& tx : blockTxs) {
+            txHashes += tx.value("txid", "");
+        }
+        uint256 merkle = Hash256(txHashes.begin(), txHashes.end());
+        merkleRoot = merkle.GetHex();
 
-    std::string prefixStr = std::to_string(height) + prevHash + merkleRoot + std::to_string(nowTime) + bitsHex;
+        bitsInt = GetNextWorkRequired();
+        targetHex = BitsToTargetHex(bitsInt);
+        std::stringstream bitsStream;
+        bitsStream << "0x" << std::hex << bitsInt;
+        bitsHex = bitsStream.str();
 
-    // Proof of work
-    uint32_t targetExponent = bitsInt >> 24;
-    uint32_t targetMantissa = bitsInt & 0x007fffff;
-    // Simple hex target comparison: 64 - 2 * (exponent - 3) leading zeroes
-    // More precisely: check target prefix
+        prefixStr = std::to_string(height) + prevHash + merkleRoot + std::to_string(nowTime) + bitsHex;
+    } // UNLOCK! RPCServer can freely process getinfo, getblock, etc.
+
+    // STEP 2: Proof of work hashing runs WITHOUT holding m_mutex
     uint64_t nonce = 0;
     std::string winnerHash;
 
@@ -412,12 +465,7 @@ nlohmann::json Blockchain::MineSingleBlockSync(const std::string& minerAddress) 
         uint256 h = Hash256(s.begin(), s.end());
         std::string hStr = h.GetHex();
         
-        // Fast check: target 0x1e0ffff0 requires hash starting with "00000" or similar
-        // Let's verify: 0x1e is 30 bytes, so top 2 bytes are 0 -> at least 4-5 hex zeros
-        if (hStr.substr(0, 5) == "00000" || (hStr.substr(0, 4) == "0000" && hStr[4] <= 'f')) {
-            // Check compact target:
-            // bits = 0x1e0ffff0 -> target exponent = 30 -> 32 - 30 = 2 bytes = 4 hex zeros
-            // If top 5 hex digits are "00000", int(h, 16) <= target_int is guaranteed for 0x1e0ffff0
+        if (hStr <= targetHex) {
             winnerHash = hStr;
             break;
         }
@@ -436,9 +484,13 @@ nlohmann::json Blockchain::MineSingleBlockSync(const std::string& minerAddress) 
         {"tx", blockTxs}
     };
 
-    m_blocks.push_back(newBlock);
-    RebuildUTXO();
-    SaveChain();
+    // STEP 3: Lock briefly to commit the new block
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_blocks.push_back(newBlock);
+        RebuildUTXO();
+        SaveChain();
+    }
     return newBlock;
 }
 
